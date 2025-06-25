@@ -1,0 +1,27 @@
+# Ignorar pastas de ambiente virtual do Python
+venv/
+.venv/
+env/
+.env
+
+# Ignorar caches e arquivos compilados do Python
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+
+# Ignorar pastas com dados brutos e processados
+# A barra no final garante que estamos ignorando a pasta inteira
+conversas_originais/
+conversas_padronizadas/
+
+# Ignorar arquivos de saída do processamento (datasets e logs)
+# O asterisco (*) serve como um coringa para qualquer nome
+*.txt
+*.jsonl
+
+dataset_processado.txt
+descartados_log.txt
+# Exceção para o README, caso você queira que ele seja incluído
+# Se o seu README for .txt, descomente a linha abaixo. Se for .md, já está seguro.
+# !README.txt

@@ -1,61 +1,63 @@
 import re
+import os
+import json
 from datetime import datetime, timedelta
 
-# --- CONSTANTES CONFIGURÁVEIS ---
-MEU_NOME = "Augusto"
-OUTRO_NOME = "Juliano" # Lembre-se de ajustar para cada conversa
+#CONSTANTES DE CONFIGURAÇÃO
+#Nome (padronizado pelo normalize)
+MEU_NOME_PADRONIZADO = "MeuNome"
+
+# Nome da pasta que contém os arquivos já padronizados e anonimizados.
+PASTA_ENTRADA = "conversas_padronizadas"
+
+# Nome do arquivo final que conterá o dataset completo para o fine-tuning.
+ARQUIVO_SAIDA_JSONL = "dataset_final.jsonl"
+
+# Hiperparâmetros de filtragem (validados anteriormente).
 THRESHOLD_RESPOSTA_HORAS = 5
 MAX_LEN_INPUT = 2000
-NOME_ARQUIVO_SAIDA = "dataset_processado.txt"
-NOME_ARQUIVO_SAIDA_DESCARTADOS = "descartados_log.txt"
 
-# --- DICIONÁRIO DE ESTATÍSTICAS (ATUALIZADO) ---
-stats_counter = {
-    "linhas_lidas_total": 0,
-    "descartado_parse_falhou": 0,
-    "descartado_sequencia_meta_ai": 0,
-    "pares_potenciais_total": 0,
-    "descartado_threshold_resposta": 0,
-    "descartado_input_muito_longo": 0,
-    "descartado_par_com_conteudo_invalido": 0
+# --- DICIONÁRIO GLOBAL DE ESTATÍSTICAS ---
+# Será usado para acumular as estatísticas de todos os arquivos processados.
+stats_global = {
+    "total_arquivos_processados": 0,
+    "total_linhas_lidas": 0,
+    "total_blocos_criados": 0,
+    "total_sequencias_ai_descartadas": 0,
+    "total_pares_potenciais": 0,
+    "total_pares_descartados_tempo": 0,
+    "total_pares_descartados_tamanho": 0,
+    "total_pares_descartados_conteudo": 0,
+    "total_pares_finais": 0
 }
 
-# --- FUNÇÕES DE PRÉ-PROCESSAMENTO (VERSÃO 4.0) ---
+# --- FUNÇÕES DE PRÉ-PROCESSAMENTO (REUTILIZADAS DA v4.0) ---
 
-def parsear_conversa_bruta(caminho_arquivo, nome_usuario1, nome_usuario2):
-    """
-    Fase 1: Apenas parseia o arquivo em uma estrutura de dados, mantendo o texto bruto.
-    A única limpeza aqui é de linhas que não são mensagens válidas.
-    """
+def parsear_conversa_bruta(caminho_arquivo, meu_nome, outro_nome):
     mensagens_brutas = []
     padrao_regex = re.compile(r'^((\d{2}/\d{2}/\d{4},? \d{2}:\d{2}) - ([^:]+): (.*))', re.MULTILINE)
-    
     try:
         with open(caminho_arquivo, 'r', encoding='utf-8') as f:
             conteudo = f.read()
-            stats_counter["linhas_lidas_total"] = len(conteudo.split('\n'))
-    except FileNotFoundError:
-        print(f"Erro: O arquivo '{caminho_arquivo}' não foi encontrado.")
+            stats_global["total_linhas_lidas"] += len(conteudo.split('\n'))
+    except Exception as e:
+        print(f"  [AVISO] Erro ao ler o arquivo {os.path.basename(caminho_arquivo)}: {e}")
         return []
 
     matches = padrao_regex.finditer(conteudo)
     for match in matches:
-        linha_completa, timestamp_str, autor, texto_bruto = match.groups()
+        _, timestamp_str, autor, texto_bruto = match.groups()
         autor_limpo = autor.strip()
-
-        if autor_limpo not in [nome_usuario1, nome_usuario2]:
+        if autor_limpo not in [meu_nome, outro_nome]:
             continue
         try:
-            timestamp_str_sem_virgula = timestamp_str.replace(',', '')
-            timestamp = datetime.strptime(timestamp_str_sem_virgula, '%d/%m/%Y %H:%M')
+            timestamp = datetime.strptime(timestamp_str.replace(',', ''), '%d/%m/%Y %H:%M')
             mensagens_brutas.append({"timestamp": timestamp, "autor": autor_limpo, "texto_bruto": texto_bruto})
         except ValueError:
-            stats_counter["descartado_parse_falhou"] += 1
             continue
     return mensagens_brutas
 
 def agrupar_mensagens(mensagens_brutas):
-    """Fase 2: Agrupa mensagens sequenciais do mesmo autor em 'blocos' de conversa."""
     if not mensagens_brutas: return []
     blocos = []
     bloco_atual = {"autor": mensagens_brutas[0]["autor"], "textos": [mensagens_brutas[0]["texto_bruto"]], "timestamp_final": mensagens_brutas[0]["timestamp"]}
@@ -68,142 +70,127 @@ def agrupar_mensagens(mensagens_brutas):
             blocos.append({"autor": bloco_atual["autor"], "texto_completo_bruto": "\n".join(bloco_atual["textos"]), "timestamp": bloco_atual["timestamp_final"]})
             bloco_atual = {"autor": msg_atual["autor"], "textos": [msg_atual["texto_bruto"]], "timestamp_final": msg_atual["timestamp"]}
     blocos.append({"autor": bloco_atual["autor"], "texto_completo_bruto": "\n".join(bloco_atual["textos"]), "timestamp": bloco_atual["timestamp_final"]})
+    stats_global["total_blocos_criados"] += len(blocos)
     return blocos
 
-def filtrar_blocos_ai(blocos_brutos, meu_nome, outro_nome, log_file):
-    """
-    Fase 3: Filtra sequências de interação com a Meta AI.
-    Padrão: Bloco 'Meu Nome' com @, seguido de Bloco 'Outro Nome'.
-    """
+def filtrar_blocos_ai(blocos_brutos, meu_nome, outro_nome):
     blocos_filtrados = []
     i = 0
-    padrao_ai = re.compile(r'@(\d{10,})') # Padrão para @ seguido de 10+ números
-    
+    padrao_ai = re.compile(r'@(\d{10,})')
+    descartes_ai_neste_arquivo = 0
     while i < len(blocos_brutos):
         bloco_atual = blocos_brutos[i]
-        # Verifica se há um próximo bloco para análise
         if i + 1 < len(blocos_brutos):
             bloco_seguinte = blocos_brutos[i+1]
-            
-            # Detecta o padrão: Eu pergunto para a IA, o outro "responde"
-            if (bloco_atual["autor"] == meu_nome and 
-                padrao_ai.search(bloco_atual["texto_completo_bruto"]) and 
-                bloco_seguinte["autor"] == outro_nome):
-                
-                stats_counter["descartado_sequencia_meta_ai"] += 1
-                log_descarte(log_file, "Sequência de Meta AI", f"PROMPT DESCARTADO:\n{bloco_atual['texto_completo_bruto']}\n\nRESPOSTA DESCARTADA:\n{bloco_seguinte['texto_completo_bruto']}")
-                i += 2  # Pula os dois blocos (o seu e o da IA)
+            if (bloco_atual["autor"] == meu_nome and padrao_ai.search(bloco_atual["texto_completo_bruto"]) and bloco_seguinte["autor"] == outro_nome):
+                descartes_ai_neste_arquivo += 1
+                i += 2
                 continue
-        
         blocos_filtrados.append(bloco_atual)
         i += 1
+    stats_global["total_sequencias_ai_descartadas"] += descartes_ai_neste_arquivo
     return blocos_filtrados
 
-def criar_e_validar_pares(blocos_filtrados, meu_nome, log_file):
-    """
-    Fase 4: Cria pares 'Outro -> Eu' e aplica toda a limpeza e validação de conteúdo.
-    """
-    pares_finais = []
-    for i in range(1, len(blocos_filtrados)):
-        bloco_anterior = blocos_filtrados[i-1]
-        bloco_atual = blocos_filtrados[i]
-
-        if bloco_anterior["autor"] != meu_nome and bloco_atual["autor"] == meu_nome:
-            stats_counter["pares_potenciais_total"] += 1
-            
-            input_bruto = bloco_anterior["texto_completo_bruto"]
-            output_bruto = bloco_atual["texto_completo_bruto"]
-            
-            # 1. Validação Temporal
-            delta_tempo = bloco_atual["timestamp"] - bloco_anterior["timestamp"]
-            if delta_tempo > timedelta(hours=THRESHOLD_RESPOSTA_HORAS):
-                stats_counter["descartado_threshold_resposta"] += 1
-                log_descarte(log_file, "Threshold de resposta excedido", f"INPUT:\n{input_bruto}\n\nOUTPUT:\n{output_bruto}")
-                continue
-
-            # 2. Limpeza do Conteúdo
-            input_limpo = limpar_texto_e_validar(input_bruto)
-            output_limpo = limpar_texto_e_validar(output_bruto)
-
-            # 3. Validação do Conteúdo Limpo
-            if not input_limpo or not output_limpo:
-                stats_counter["descartado_par_com_conteudo_invalido"] += 1
-                log_descarte(log_file, "Conteúdo inválido após limpeza (mídia, null, etc)", f"INPUT BRUTO:\n{input_bruto}\n\nOUTPUT BRUTO:\n{output_bruto}")
-                continue
-            
-            if len(input_limpo) > MAX_LEN_INPUT:
-                stats_counter["descartado_input_muito_longo"] += 1
-                log_descarte(log_file, f"Input muito longo ({len(input_limpo)} chars)", f"INPUT LIMPO:\n{input_limpo}")
-                continue
-                
-            pares_finais.append((input_limpo, output_limpo))
-            
-    return pares_finais
-
 def limpar_texto_e_validar(texto_bruto):
-    """Função auxiliar que limpa o texto e checa por padrões inválidos."""
-    # Checa por mensagens de sistema que podem ter sido agrupadas
-    if any(keyword in texto_bruto for keyword in ["Ligação de vídeo perdida", "Mensagem apagada", "(arquivo anexado)"]):
+    if any(keyword in texto_bruto for keyword in ["Ligação de vídeo perdida", "Mensagem apagada", "(arquivo anexado)"]) or ": null" in texto_bruto:
         return ""
-    if ": null" in texto_bruto:
-        return ""
-        
     texto_limpo = texto_bruto.replace("<Mídia oculta>", "").strip()
     texto_limpo = re.sub(r'https?://\S+', '', texto_limpo).strip()
     return texto_limpo
 
-def log_descarte(arquivo, motivo, conteudo):
-    try:
-        arquivo.write(f"--- MOTIVO: {motivo} ---\n")
-        arquivo.write(f"CONTEÚDO:\n{conteudo}\n")
-        arquivo.write("-" * 20 + "\n\n")
-    except Exception: pass
+def criar_e_validar_pares(blocos_filtrados, meu_nome):
+    pares_finais = []
+    for i in range(1, len(blocos_filtrados)):
+        bloco_anterior = blocos_filtrados[i-1]
+        bloco_atual = blocos_filtrados[i]
+        if bloco_anterior["autor"] != meu_nome and bloco_atual["autor"] == meu_nome:
+            stats_global["total_pares_potenciais"] += 1
+            delta_tempo = bloco_atual["timestamp"] - bloco_anterior["timestamp"]
+            if delta_tempo > timedelta(hours=THRESHOLD_RESPOSTA_HORAS):
+                stats_global["total_pares_descartados_tempo"] += 1
+                continue
 
-# --- FUNÇÃO PRINCIPAL ---
-def pre_processar_conversa_final(caminho_arquivo):
-    """Orquestra o novo fluxo de pré-processamento."""
-    print("Iniciando o pré-processamento (v4.0)...")
-    
-    with open(NOME_ARQUIVO_SAIDA_DESCARTADOS, 'w', encoding='utf-8') as log_file:
-        log_file.write("--- Log de Descartados ---\n\n")
-        
-        # Fase 1: Parsear dados brutos
-        mensagens_brutas = parsear_conversa_bruta(caminho_arquivo, MEU_NOME, OUTRO_NOME)
-        print(f"1. {len(mensagens_brutas)} mensagens de autores válidos encontradas.")
+            input_limpo = limpar_texto_e_validar(bloco_anterior["texto_completo_bruto"])
+            output_limpo = limpar_texto_e_validar(bloco_atual["texto_completo_bruto"])
 
-        # Fase 2: Agrupar em blocos
-        blocos_brutos = agrupar_mensagens(mensagens_brutas)
-        print(f"2. {len(blocos_brutos)} blocos de conversa (turnos) criados.")
-        
-        # Fase 3: Filtrar interações com a IA
-        blocos_filtrados = filtrar_blocos_ai(blocos_brutos, MEU_NOME, OUTRO_NOME, log_file)
-        print(f"3. {len(blocos_filtrados)} blocos restantes após filtro da Meta AI.")
-
-        # Fase 4: Criar e validar pares
-        pares_finais = criar_e_validar_pares(blocos_filtrados, MEU_NOME, log_file)
-        print(f"4. {len(pares_finais)} pares de input/output finais gerados.")
-
-    # ... (print_stats_summary e salvamento do arquivo permanecem similares, precisam ser ajustados para os novos contadores) ...
-    print("\nPré-processamento concluído!")
+            if not input_limpo or not output_limpo:
+                stats_global["total_pares_descartados_conteudo"] += 1
+                continue
+            if len(input_limpo) > MAX_LEN_INPUT:
+                stats_global["total_pares_descartados_tamanho"] += 1
+                continue
+            
+            pares_finais.append({"input": input_limpo, "output": output_limpo})
     return pares_finais
 
-# --- Bloco de Execução ---
-if __name__ == "__main__":
-    CAMINHO_ARQUIVO_TXT = 'Exemplo2.txt'
-    MEU_NOME = "Augusto"
-    OUTRO_NOME = "Vitória"
+# --- ORQUESTRADOR PRINCIPAL ---
 
-    pares_processados = pre_processar_conversa_final(CAMINHO_ARQUIVO_TXT)
-    
-    if pares_processados:
-        # Salvar o arquivo final...
-        try:
-            with open(NOME_ARQUIVO_SAIDA, 'w', encoding='utf-8') as f:
-                for i, (entrada, saida) in enumerate(pares_processados):
-                    f.write(f"----- PAR {i+1} -----\n")
-                    f.write(f"INPUT:\n{entrada}\n\n")
-                    f.write(f"OUTPUT:\n{saida}\n")
-                    f.write("-" * 20 + "\n\n")
-            print(f"\nSucesso! Os pares processados foram salvos em '{NOME_ARQUIVO_SAIDA}'.")
-        except Exception as e:
-            print(f"Ocorreu um erro ao salvar o arquivo: {e}")
+def processar_conversas_padronizadas():
+    """
+    Orquestra o processo completo: itera sobre as pastas e arquivos padronizados,
+    processa cada um e agrega os resultados em um único arquivo JSONL.
+    """
+    if not os.path.isdir(PASTA_ENTRADA):
+        print(f"ERRO: A pasta de entrada '{PASTA_ENTRADA}' não foi encontrada.")
+        print("Certifique-se de que a pasta com as conversas padronizadas existe.")
+        return
+
+    dataset_completo = []
+    print(f"Iniciando pré-processamento final a partir da pasta '{PASTA_ENTRADA}'...")
+    print("-" * 50)
+
+    # Itera sobre as subpastas (categorias)
+    for categoria in os.listdir(PASTA_ENTRADA):
+        pasta_categoria = os.path.join(PASTA_ENTRADA, categoria)
+        if os.path.isdir(pasta_categoria):
+            print(f"\nProcessando categoria: '{categoria}'")
+            
+            # Itera sobre os arquivos .txt na categoria
+            for nome_arquivo in sorted(os.listdir(pasta_categoria)):
+                if nome_arquivo.endswith(".txt"):
+                    stats_global["total_arquivos_processados"] += 1
+                    caminho_arquivo = os.path.join(pasta_categoria, nome_arquivo)
+                    # O nome do interlocutor é o nome do arquivo sem a extensão
+                    outro_nome = nome_arquivo.replace(".txt", "")
+                    
+                    print(f"  - Lendo arquivo: '{nome_arquivo}' (Interlocutor: {outro_nome})")
+
+                    # Pipeline de processamento para um arquivo
+                    mensagens = parsear_conversa_bruta(caminho_arquivo, MEU_NOME_PADRONIZADO, outro_nome)
+                    blocos = agrupar_mensagens(mensagens)
+                    blocos_sem_ai = filtrar_blocos_ai(blocos, MEU_NOME_PADRONIZADO, outro_nome)
+                    pares_processados = criar_e_validar_pares(blocos_sem_ai, MEU_NOME_PADRONIZADO)
+                    
+                    # Adiciona a categoria a cada par e agrega ao dataset final
+                    for par in pares_processados:
+                        par['categoria'] = categoria
+                        dataset_completo.append(par)
+
+    stats_global["total_pares_finais"] = len(dataset_completo)
+
+    # Salva o dataset final em formato JSONL
+    try:
+        with open(ARQUIVO_SAIDA_JSONL, 'w', encoding='utf-8') as f:
+            for par in dataset_completo:
+                f.write(json.dumps(par, ensure_ascii=False) + '\n')
+    except Exception as e:
+        print(f"\n[ERRO FATAL] Ocorreu um erro ao salvar o arquivo final: {e}")
+        return
+
+    print("-" * 50)
+    print("Processamento e unificação concluídos com sucesso!")
+    print(f"\n--- ESTATÍSTICAS GLOBAIS ---")
+    print(f"Arquivos processados: {stats_global['total_arquivos_processados']}")
+    print(f"Pares de treino finais gerados: {stats_global['total_pares_finais']}")
+    print(f"Pares potenciais encontrados: {stats_global['total_pares_potenciais']}")
+    print(f"  - Descartados por tempo (> {THRESHOLD_RESPOSTA_HORAS}h): {stats_global['total_pares_descartados_tempo']}")
+    print(f"  - Descartados por conteúdo inválido: {stats_global['total_pares_descartados_conteudo']}")
+    print(f"  - Descartados por tamanho do input (> {MAX_LEN_INPUT} chars): {stats_global['total_pares_descartados_tamanho']}")
+    print(f"  - Interações com Meta AI removidas: {stats_global['total_sequencias_ai_descartadas']}")
+    print("-" * 50)
+    print(f"Seu dataset final está pronto em '{ARQUIVO_SAIDA_JSONL}'.")
+
+# --- BLOCO DE EXECUÇÃO ---
+if __name__ == "__main__":
+    processar_conversas_padronizadas()
+

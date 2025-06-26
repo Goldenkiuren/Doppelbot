@@ -61,12 +61,23 @@ peft_config = LoraConfig(
     ],
 )
 
-# --- 5. Carregamento do Dataset ---
-print(f"Carregando dataset: {NOME_DATASET}")
-# O SFTTrainer espera uma coluna com a conversa, por padrão 'text'.
-# Como nosso JSONL tem uma lista de dicionários, vamos renomear para 'messages'.
-dataset = load_dataset("json", data_files=NOME_DATASET, split="train")
-dataset = dataset.rename_column("conversations", "messages") # Renomeia a coluna implícita
+# --- 5. Carregamento e Processamento do Dataset ---
+import json
+
+print(f"Carregando e processando dataset: {NOME_DATASET}")
+
+# Carrega o dataset como um arquivo de texto simples, linha por linha
+dataset = load_dataset("text", data_files=NOME_DATASET, split="train")
+
+# Mapeia cada linha (que é uma string JSON) para o formato de chat esperado
+def formatar_para_chat(linha):
+    # A coluna 'text' contém a string '[{"role": "system", ...}]'
+    # A gente transforma essa string de volta em um objeto Python (lista de dicts)
+    conversa = json.loads(linha['text'])
+    # O SFTTrainer espera que essa lista esteja em uma coluna chamada "messages"
+    return {"messages": conversa}
+
+dataset = dataset.map(formatar_para_chat, remove_columns=["text"])
 
 
 # --- 6. Argumentos de Treinamento ---

@@ -63,7 +63,15 @@ dataset = load_dataset("text", data_files={"train": NOME_DATASET}, split="train"
 
 def formatar_para_chat(linha):
     conversa = json.loads(linha["text"])
-    return {"messages": conversa}
+    mensagens_formatadas = ""
+    for msg in conversa:
+        if msg["role"] == "user":
+            mensagens_formatadas += f"<|user|>\n{msg['content']}\n"
+        elif msg["role"] == "assistant":
+            mensagens_formatadas += f"<|assistant|>\n{msg['content']}\n"
+        else:
+            mensagens_formatadas += f"<|{msg['role']}|>\n{msg['content']}\n"
+    return {"messages": mensagens_formatadas.strip()}
 
 dataset = dataset.map(formatar_para_chat, remove_columns=["text"])
 
@@ -71,10 +79,10 @@ dataset = dataset.map(formatar_para_chat, remove_columns=["text"])
 sft_config = SFTConfig(
     output_dir="./results",
     num_train_epochs=1,
-    per_device_train_batch_size=4,
-    gradient_accumulation_steps=1,
+    per_device_train_batch_size=1,
+    gradient_accumulation_steps=8,
     optim="paged_adamw_32bit",
-    learning_rate=1e-4,
+    learning_rate=2e-5,
     weight_decay=0.001,
     fp16=False,
     bf16=True,
@@ -82,13 +90,14 @@ sft_config = SFTConfig(
     max_steps=-1,
     warmup_ratio=0.03,
     lr_scheduler_type="constant",
-    report_to=None,            # desativado para evitar erro de TensorBoard
+    report_to=None,
     dataset_text_field="messages",
     max_seq_length=512,
     packing=False,
     save_steps=50,
     logging_steps=10,
 )
+
 
 # --- 7. Inicialização do Trainer ---
 trainer = SFTTrainer(

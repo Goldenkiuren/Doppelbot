@@ -94,7 +94,7 @@ sft_config = SFTConfig(
     dataset_text_field="messages",
     max_seq_length=512,
     packing=False,
-    save_steps=50,
+    save_steps=500,
     logging_steps=10,
 )
 

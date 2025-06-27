@@ -65,13 +65,21 @@ peft_config = LoraConfig(
 
 # --- 5. Carregamento e Processamento do Dataset ---
 print(f"Carregando e processando dataset: {NOME_DATASET}")
-def preprocess_function(examples):
-    # A coluna 'text' no dataset carregado contém cada linha JSON como uma string.
-    # Precisamos analisar essa string para obter a lista de dicionários.
-    return {"messages": [json.loads(text) for text in examples["text"]]}
-
 dataset = load_dataset("text", data_files={"train": NOME_DATASET}, split="train")
-dataset = dataset.map(preprocess_function, batched=True, remove_columns=["text"])
+
+def formatar_para_chat(linha):
+    conversa = json.loads(linha["text"])
+    mensagens_formatadas = ""
+    for msg in conversa:
+        if msg["role"] == "user":
+            mensagens_formatadas += f"<|user|>\n{msg['content']}\n"
+        elif msg["role"] == "assistant":
+            mensagens_formatadas += f"<|assistant|>\n{msg['content']}\n"
+        else:
+            mensagens_formatadas += f"<|{msg['role']}|>\n{msg['content']}\n"
+    return {"messages": mensagens_formatadas.strip()}
+
+dataset = dataset.map(formatar_para_chat, remove_columns=["text"])
 
 # --- 6. Configuração do SFT (substitui TrainingArguments) ---
 sft_config = SFTConfig(
@@ -90,7 +98,7 @@ sft_config = SFTConfig(
     lr_scheduler_type="cosine", # <-- MUDANÇA 2: Scheduler mais eficaz para convergência.
     report_to=None,
     dataset_text_field="messages",
-    max_seq_length=1024,
+    max_seq_length=512,
     packing=False,
     save_steps=500,
     logging_steps=10,
@@ -102,7 +110,6 @@ trainer = SFTTrainer(
     model=model,
     train_dataset=dataset,
     peft_config=peft_config,
-    dataset_text_field="messages",
     args=sft_config,
 )
 

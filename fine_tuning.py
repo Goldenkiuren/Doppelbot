@@ -44,9 +44,9 @@ tokenizer = AutoTokenizer.from_pretrained(MODELO_BASE, trust_remote_code=True)
 tokenizer.pad_token = tokenizer.eos_token
 tokenizer.padding_side = "right"
 
-# --- 4. Configuração do LoRA ---
+# --- 4. Configuração do LoRA OTIMIZADA ---
 peft_config = LoraConfig(
-    lora_alpha=16,
+    lora_alpha=128,  # <-- MUDANÇA 1: Ajustado para ser 2x o valor de 'r'.
     lora_dropout=0.1,
     r=64,
     bias="none",
@@ -89,7 +89,7 @@ sft_config = SFTConfig(
     max_grad_norm=0.3,
     max_steps=-1,
     warmup_ratio=0.03,
-    lr_scheduler_type="constant",
+    lr_scheduler_type="cosine", # <-- MUDANÇA 2: Scheduler mais eficaz para convergência.
     report_to=None,
     dataset_text_field="messages",
     max_seq_length=512,

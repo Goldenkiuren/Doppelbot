@@ -79,17 +79,17 @@ while True:
     # Gera a resposta
     with torch.no_grad():
         outputs = model.generate(
-            input_ids,
-            max_new_tokens=250,
-            do_sample=True,
-            temperature=0.8,
-            top_p=0.9,
-            top_k=50,
-            repetition_penalty=1.15,
-            no_repeat_ngram_size=3,
-            eos_token_id=[tokenizer.eos_token_id, tokenizer.convert_tokens_to_ids("<|eot_id|>")],
-            pad_token_id=tokenizer.eos_token_id
-        )
+                input_ids,
+                max_new_tokens=150,         # <-- REDUZIDO: Força respostas mais curtas e diretas.
+                do_sample=True,
+                temperature=0.5,            # <-- REDUZIDO: A mudança mais importante para aumentar a coerência.
+                top_p=0.9,
+                top_k=50,
+                repetition_penalty=1.1,     # <-- AJUSTADO: Um pouco menos agressivo.
+                no_repeat_ngram_size=3,
+                eos_token_id=[tokenizer.eos_token_id, tokenizer.convert_tokens_to_ids("<|eot_id|>")],
+                pad_token_id=tokenizer.eos_token_id
+            )
 
     # Decodifica apenas a parte nova da resposta
     resposta_ids = outputs[0][input_ids.shape[-1]:]

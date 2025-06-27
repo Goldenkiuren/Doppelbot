@@ -66,9 +66,13 @@ def agrupar_mensagens(mensagens_brutas):
             bloco_atual["textos"].append(msg_atual["texto_bruto"])
             bloco_atual["timestamp_final"] = msg_atual["timestamp"]
         else:
-            blocos.append({"autor": bloco_atual["autor"], "texto_completo_bruto": "\n".join(bloco_atual["textos"]), "timestamp": bloco_atual["timestamp_final"]})
+            # --- MUDANÇA AQUI: Usa um separador especial em vez de '\n' ---
+            texto_completo = "<|msg_sep|>".join(bloco_atual["textos"])
+            blocos.append({"autor": bloco_atual["autor"], "texto_completo_bruto": texto_completo, "timestamp": bloco_atual["timestamp_final"]})
             bloco_atual = {"autor": msg_atual["autor"], "textos": [msg_atual["texto_bruto"]], "timestamp_final": msg_atual["timestamp"]}
-    blocos.append({"autor": bloco_atual["autor"], "texto_completo_bruto": "\n".join(bloco_atual["textos"]), "timestamp": bloco_atual["timestamp_final"]})
+    
+    texto_completo_final = "<|msg_sep|>".join(bloco_atual["textos"])
+    blocos.append({"autor": bloco_atual["autor"], "texto_completo_bruto": texto_completo_final, "timestamp": bloco_atual["timestamp_final"]})
     stats_global["total_blocos_criados"] += len(blocos)
     return blocos
 
@@ -91,15 +95,20 @@ def filtrar_blocos_ai(blocos_brutos, meu_nome, outro_nome):
     return blocos_filtrados
 
 def limpar_texto_e_validar(texto_bruto):
-    # Lista de palavras-chave para descarte da mensagem inteira
-    keywords_descarte = ["Ligação de vídeo perdida", "Mensagem apagada", "(arquivo anexado)", ": null"]
-    if any(keyword in texto_bruto for keyword in keywords_descarte):
+    texto_limpo = texto_bruto.strip()
+
+    # --- MUDANÇA AQUI: Lógica de limpeza aprimorada para 'null' e outras keywords ---
+    # Descarte se a mensagem for EXATAMENTE "null"
+    if texto_limpo.lower() == "null":
+        return ""
+
+    # Lista de palavras-chave que invalidam a mensagem se estiverem presentes
+    keywords_descarte = ["Ligação de vídeo perdida", "Mensagem apagada", "(arquivo anexado)"]
+    if any(keyword in texto_limpo for keyword in keywords_descarte):
         return ""
     
-    # Lista de marcadores para remover do texto, mantendo o resto
+    # Lista de marcadores para remover, mantendo o resto do texto
     marcadores_remover = ["<Mídia oculta>", "<Mensagem editada>"]
-    
-    texto_limpo = texto_bruto
     for marcador in marcadores_remover:
         texto_limpo = texto_limpo.replace(marcador, "")
 
@@ -177,7 +186,6 @@ def processar_conversas_padronizadas():
 
     print("-" * 50)
     print("Processamento e unificação concluídos com sucesso!")
-    # (O resto da impressão de estatísticas continua igual)
     print(f"\n--- ESTATÍSTICAS GLOBAIS ---")
     print(f"Arquivos processados: {stats_global['total_arquivos_processados']}")
     print(f"Pares de treino finais gerados: {stats_global['total_pares_finais']}")

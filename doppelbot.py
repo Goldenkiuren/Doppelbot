@@ -1,9 +1,9 @@
 import torch
-from transformers import AutoModelForCausalLM, AutoTokenizer
+from transformers import AutoModelForCausalLM, AutoTokenizer, BitsAndBytesConfig
 from peft import PeftModel
-import readline  # Melhora a experiência de input no terminal
-import sys       # Para ler argumentos da linha de comando
-import os        # Para verificar se o arquivo existe
+import readline
+import sys
+import os
 
 # --- Função para carregar o prompt de um arquivo ---
 def carregar_prompt_base(caminho_arquivo):
@@ -28,50 +28,48 @@ caminho_descricao = sys.argv[1]
 base_model_id = "meta-llama/Meta-Llama-3-8B-Instruct"
 adapters_path = "doppelbot-llama3-8b-instruct-adapters"
 
-# --- Carrega o template do prompt do arquivo ---
 prompt_template = carregar_prompt_base(caminho_descricao)
 
 # --- Carrega modelo com LoRA ---
 print("Carregando modelo e tokenizador...")
+bnb_config = BitsAndBytesConfig(
+    load_in_4bit=True,
+    bnb_4bit_quant_type="nf4",
+    bnb_4bit_compute_dtype=torch.bfloat16
+)
 model = AutoModelForCausalLM.from_pretrained(
     base_model_id,
-    torch_dtype=torch.bfloat16,
+    quantization_config=bnb_config,
     device_map="auto"
 )
 model = PeftModel.from_pretrained(model, adapters_path)
-model = model.eval() # Coloca o modelo em modo de avaliação
-
+model = model.eval()
 tokenizer = AutoTokenizer.from_pretrained(adapters_path)
 
 # --- Monta o prompt de sistema com base na categoria ---
 categoria = input("Com quem o Doppelbot está falando? (ex: amigo, interesse romântico...): ").strip()
 if not categoria:
-    categoria = "amigo" # Define um padrão
+    categoria = "amigo"
 
 system_prompt = prompt_template.format(categoria=categoria)
 
-# --- Loop de chat ---
-# A lista `historico_chat` vai guardar a memória da conversa
-historico_chat = [{"role": "system", "content": system_prompt}]
-
-print("\n=== Chat com Doppelbot iniciado ===")
-print("(Digite 'sair' para encerrar ou 'limpar' para reiniciar o histórico)\n")
+print("\n=== Gerador de Respostas Isoladas ===")
+print("(Digite 'sair' para encerrar)\n")
 
 while True:
     user_input = input("Você: ").strip()
     if user_input.lower() in ["sair", "exit", "quit"]:
         break
-    if user_input.lower() == 'limpar':
-        historico_chat = [{"role": "system", "content": system_prompt}]
-        print("\n--- Histórico da conversa limpo ---\n")
-        continue
 
-    # Adiciona a nova mensagem do usuário ao histórico
-    historico_chat.append({"role": "user", "content": user_input})
+    # O histórico é criado do zero a cada pergunta
+    conversa_atual = [
+        {"role": "system", "content": system_prompt},
+        {"role": "user", "content": user_input}
+    ]
 
-    # Usa o 'apply_chat_template' para formatar todo o histórico corretamente
+    # Usa o 'apply_chat_template' apenas com a conversa atual, sem histórico
     input_ids = tokenizer.apply_chat_template(
-        historico_chat,
+        conversa_atual,
         add_generation_prompt=True,
         return_tensors="pt"
     ).to(model.device)
@@ -80,12 +78,12 @@ while True:
     with torch.no_grad():
         outputs = model.generate(
                 input_ids,
-                max_new_tokens=150,         # <-- REDUZIDO: Força respostas mais curtas e diretas.
+                max_new_tokens=150,
                 do_sample=True,
-                temperature=0.5,            # <-- REDUZIDO: A mudança mais importante para aumentar a coerência.
+                temperature=0.5,
                 top_p=0.9,
                 top_k=50,
-                repetition_penalty=1.1,     # <-- AJUSTADO: Um pouco menos agressivo.
+                repetition_penalty=1.1,
                 no_repeat_ngram_size=3,
                 eos_token_id=[tokenizer.eos_token_id, tokenizer.convert_tokens_to_ids("<|eot_id|>")],
                 pad_token_id=tokenizer.eos_token_id
@@ -93,13 +91,10 @@ while True:
 
     # Decodifica apenas a parte nova da resposta
     resposta_ids = outputs[0][input_ids.shape[-1]:]
-    resposta_texto = tokenizer.decode(resposta_ids, skip_special_tokens=True).strip()
+    resposta_bruta = tokenizer.decode(resposta_ids, skip_special_tokens=True).strip()
 
-    print(f"Doppelbot: {resposta_texto}\n")
-
-    # Adiciona a resposta do bot ao histórico para o próximo turno
-    historico_chat.append({"role": "assistant", "content": resposta_texto})
-
-    # Limita o histórico para não estourar a memória (guarda os últimos 8 turnos)
-    if len(historico_chat) > (1 + 8 * 2): # 1 system + 8 pares de user/assistant
-        historico_chat = [historico_chat[0]] + historico_chat[-16:]
+    # --- MUDANÇA APLICADA AQUI ---
+    # Substitui o marcador especial por uma quebra de linha para uma exibição mais natural.
+    resposta_formatada = resposta_bruta.replace("<|msg_sep|>", "\n")
+    
+    print(f"Doppelbot:\n{resposta_formatada}\n")

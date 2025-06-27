@@ -18,7 +18,6 @@ THRESHOLD_RESPOSTA_HORAS = 5
 MAX_LEN_INPUT = 2000
 
 # --- DICIONÁRIO GLOBAL DE ESTATÍSTICAS ---
-# Será usado para acumular as estatísticas de todos os arquivos processados.
 stats_global = {
     "total_arquivos_processados": 0,
     "total_linhas_lidas": 0,
@@ -31,7 +30,7 @@ stats_global = {
     "total_pares_finais": 0
 }
 
-# --- FUNÇÕES DE PRÉ-PROCESSAMENTO (REUTILIZADAS DA v4.0) ---
+# --- FUNÇÕES DE PRÉ-PROCESSAMENTO ---
 
 def parsear_conversa_bruta(caminho_arquivo, meu_nome, outro_nome):
     mensagens_brutas = []
@@ -92,11 +91,23 @@ def filtrar_blocos_ai(blocos_brutos, meu_nome, outro_nome):
     return blocos_filtrados
 
 def limpar_texto_e_validar(texto_bruto):
-    if any(keyword in texto_bruto for keyword in ["Ligação de vídeo perdida", "Mensagem apagada", "(arquivo anexado)"]) or ": null" in texto_bruto:
+    # Lista de palavras-chave para descarte da mensagem inteira
+    keywords_descarte = ["Ligação de vídeo perdida", "Mensagem apagada", "(arquivo anexado)", ": null"]
+    if any(keyword in texto_bruto for keyword in keywords_descarte):
         return ""
-    texto_limpo = texto_bruto.replace("<Mídia oculta>", "").strip()
-    texto_limpo = re.sub(r'https?://\S+', '', texto_limpo).strip()
-    return texto_limpo
+    
+    # Lista de marcadores para remover do texto, mantendo o resto
+    marcadores_remover = ["<Mídia oculta>", "<Mensagem editada>"]
+    
+    texto_limpo = texto_bruto
+    for marcador in marcadores_remover:
+        texto_limpo = texto_limpo.replace(marcador, "")
+
+    # Remove links
+    texto_limpo = re.sub(r'https?://\S+', '', texto_limpo)
+    
+    return texto_limpo.strip()
+
 
 def criar_e_validar_pares(blocos_filtrados, meu_nome):
     pares_finais = []
@@ -124,51 +135,38 @@ def criar_e_validar_pares(blocos_filtrados, meu_nome):
     return pares_finais
 
 # --- ORQUESTRADOR PRINCIPAL ---
-
 def processar_conversas_padronizadas():
-    """
-    Orquestra o processo completo: itera sobre as pastas e arquivos padronizados,
-    processa cada um e agrega os resultados em um único arquivo JSONL.
-    """
     if not os.path.isdir(PASTA_ENTRADA):
         print(f"ERRO: A pasta de entrada '{PASTA_ENTRADA}' não foi encontrada.")
-        print("Certifique-se de que a pasta com as conversas padronizadas existe.")
         return
 
     dataset_completo = []
     print(f"Iniciando pré-processamento final a partir da pasta '{PASTA_ENTRADA}'...")
     print("-" * 50)
 
-    # Itera sobre as subpastas (categorias)
     for categoria in os.listdir(PASTA_ENTRADA):
         pasta_categoria = os.path.join(PASTA_ENTRADA, categoria)
         if os.path.isdir(pasta_categoria):
             print(f"\nProcessando categoria: '{categoria}'")
-            
-            # Itera sobre os arquivos .txt na categoria
             for nome_arquivo in sorted(os.listdir(pasta_categoria)):
                 if nome_arquivo.endswith(".txt"):
                     stats_global["total_arquivos_processados"] += 1
                     caminho_arquivo = os.path.join(pasta_categoria, nome_arquivo)
-                    # O nome do interlocutor é o nome do arquivo sem a extensão
                     outro_nome = nome_arquivo.replace(".txt", "")
                     
                     print(f"  - Lendo arquivo: '{nome_arquivo}' (Interlocutor: {outro_nome})")
 
-                    # Pipeline de processamento para um arquivo
                     mensagens = parsear_conversa_bruta(caminho_arquivo, MEU_NOME_PADRONIZADO, outro_nome)
                     blocos = agrupar_mensagens(mensagens)
                     blocos_sem_ai = filtrar_blocos_ai(blocos, MEU_NOME_PADRONIZADO, outro_nome)
                     pares_processados = criar_e_validar_pares(blocos_sem_ai, MEU_NOME_PADRONIZADO)
                     
-                    # Adiciona a categoria a cada par e agrega ao dataset final
                     for par in pares_processados:
                         par['categoria'] = categoria
                         dataset_completo.append(par)
 
     stats_global["total_pares_finais"] = len(dataset_completo)
 
-    # Salva o dataset final em formato JSONL
     try:
         with open(ARQUIVO_SAIDA_JSONL, 'w', encoding='utf-8') as f:
             for par in dataset_completo:
@@ -179,6 +177,7 @@ def processar_conversas_padronizadas():
 
     print("-" * 50)
     print("Processamento e unificação concluídos com sucesso!")
+    # (O resto da impressão de estatísticas continua igual)
     print(f"\n--- ESTATÍSTICAS GLOBAIS ---")
     print(f"Arquivos processados: {stats_global['total_arquivos_processados']}")
     print(f"Pares de treino finais gerados: {stats_global['total_pares_finais']}")
@@ -190,7 +189,6 @@ def processar_conversas_padronizadas():
     print("-" * 50)
     print(f"Seu dataset final está pronto em '{ARQUIVO_SAIDA_JSONL}'.")
 
-# --- BLOCO DE EXECUÇÃO ---
+
 if __name__ == "__main__":
     processar_conversas_padronizadas()
-

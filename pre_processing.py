@@ -95,27 +95,41 @@ def filtrar_blocos_ai(blocos_brutos, meu_nome, outro_nome):
     return blocos_filtrados
 
 def limpar_texto_e_validar(texto_bruto):
-    texto_limpo = texto_bruto.strip()
-
-    # --- MUDANÇA AQUI: Lógica de limpeza aprimorada para 'null' e outras keywords ---
-    # Descarte se a mensagem for EXATAMENTE "null"
-    if texto_limpo.lower() == "null":
-        return ""
-
-    # Lista de palavras-chave que invalidam a mensagem se estiverem presentes
-    keywords_descarte = ["Ligação de vídeo perdida", "Mensagem apagada", "(arquivo anexado)"]
-    if any(keyword in texto_limpo for keyword in keywords_descarte):
-        return ""
+    # 1. Quebra o bloco em mensagens individuais usando o separador
+    mensagens_individuais = texto_bruto.split("<|msg_sep|>")
+    
+    mensagens_limpas = []
+    
+    # Lista de palavras-chave que invalidam uma mensagem inteira
+    keywords_descarte = ["ligação de vídeo perdida", "mensagem apagada", "(arquivo anexado)"]
     
     # Lista de marcadores para remover, mantendo o resto do texto
     marcadores_remover = ["<Mídia oculta>", "<Mensagem editada>"]
-    for marcador in marcadores_remover:
-        texto_limpo = texto_limpo.replace(marcador, "")
-
-    # Remove links
-    texto_limpo = re.sub(r'https?://\S+', '', texto_limpo)
     
-    return texto_limpo.strip()
+    for msg in mensagens_individuais:
+        msg_processada = msg.strip()
+        
+        # 2. Ignora mensagens que são exatamente "null" ou vazias
+        if msg_processada.lower() == 'null' or not msg_processada:
+            continue
+            
+        # 3. Descarta a mensagem se contiver keywords de descarte
+        if any(keyword in msg_processada.lower() for keyword in keywords_descarte):
+            continue
+            
+        # 4. Remove marcadores indesejados
+        for marcador in marcadores_remover:
+            msg_processada = msg_processada.replace(marcador, "")
+            
+        # 5. Remove links
+        msg_processada = re.sub(r'https?://\S+', '', msg_processada)
+        
+        # Se após toda a limpeza a mensagem ainda tiver conteúdo, adicione-a
+        if msg_processada.strip():
+            mensagens_limpas.append(msg_processada.strip())
+
+    # 6. Junta as mensagens limpas de volta com o separador
+    return "<|msg_sep|>".join(mensagens_limpas)
 
 
 def criar_e_validar_pares(blocos_filtrados, meu_nome):

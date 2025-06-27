@@ -4,6 +4,7 @@ from peft import PeftModel
 import readline
 import sys
 import os
+import re
 
 # --- Função para carregar o prompt de um arquivo ---
 def carregar_prompt_base(caminho_arquivo):
@@ -93,8 +94,9 @@ while True:
     resposta_ids = outputs[0][input_ids.shape[-1]:]
     resposta_bruta = tokenizer.decode(resposta_ids, skip_special_tokens=True).strip()
 
-    # --- MUDANÇA APLICADA AQUI ---
-    # Substitui o marcador especial por uma quebra de linha para uma exibição mais natural.
-    resposta_formatada = resposta_bruta.replace("<|msg_sep|>", "\n")
+    padroes_separador = r'<\|\s*(msg_sep|img_sep|msgSep|msge Sep|msg_separador_)\s*\|>'
+    resposta_sem_separador = re.sub(padroes_separador, '\n', resposta_bruta, flags=re.IGNORECASE).strip()
+    resposta_sem_null = re.sub(r'(\s*null\s*)+', ' ', resposta_sem_separador).strip()
+    resposta_formatada = re.sub(r'\n{2,}', '\n\n', resposta_sem_null)
     
     print(f"Doppelbot:\n{resposta_formatada}\n")

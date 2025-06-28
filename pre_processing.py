@@ -35,7 +35,10 @@ stats_global = {
 
 def parsear_conversa_bruta(caminho_arquivo, meu_nome, outro_nome):
     mensagens_brutas = []
-    padrao_regex = re.compile(r'^((\d{2}/\d{2}/\d{4},? \d{2}:\d{2}) - ([^:]+): (.*))', re.MULTILINE)
+    padrao_regex = re.compile(
+        r'^(\d{2}/\d{2}/\d{4},? \d{2}:\d{2}) - ([^:]+): (.*?)(?=(?:\r?\n)?^\d{2}/\d{2}/\d{4},? \d{2}:\d{2} - |\Z)',
+        re.DOTALL | re.MULTILINE
+    )
     try:
         with open(caminho_arquivo, 'r', encoding='utf-8') as f:
             conteudo = f.read()
@@ -46,7 +49,8 @@ def parsear_conversa_bruta(caminho_arquivo, meu_nome, outro_nome):
 
     matches = padrao_regex.finditer(conteudo)
     for match in matches:
-        _, timestamp_str, autor, texto_bruto = match.groups()
+        timestamp_str, autor, texto_bruto = match.groups() 
+        texto_bruto = texto_bruto.strip()
         autor_limpo = autor.strip()
         if autor_limpo not in [meu_nome, outro_nome]:
             continue
@@ -71,32 +75,41 @@ def agrupar_mensagens(mensagens_brutas):
             blocos.append({"autor": bloco_atual["autor"], "texto_completo_bruto": texto_completo, "timestamp": bloco_atual["timestamp_final"]})
             bloco_atual = {"autor": msg_atual["autor"], "textos": [msg_atual["texto_bruto"]], "timestamp_final": msg_atual["timestamp"]}
     
-    texto_completo_final = "<|msg_sep|>".join(bloco_atual["textos"])
+    texto_completo_final = "\n".join(bloco_atual["textos"]) # Alterado aqui
     blocos.append({"autor": bloco_atual["autor"], "texto_completo_bruto": texto_completo_final, "timestamp": bloco_atual["timestamp_final"]})
     stats_global["total_blocos_criados"] += len(blocos)
     return blocos
 
 def filtrar_blocos_ai(blocos_brutos, meu_nome, outro_nome):
     blocos_filtrados = []
-    i = 0
+    # Usamos um iterador para poder avançar ele manualmente quando necessário
+    iter_blocos = iter(enumerate(blocos_brutos)) 
+
     padrao_ai = re.compile(r'@(\d{10,})')
-    descartes_ai_neste_arquivo = 0
-    while i < len(blocos_brutos):
-        bloco_atual = blocos_brutos[i]
+
+    for i, bloco_atual in iter_blocos:
+        # Verifica se há um próximo bloco para evitar IndexError
         if i + 1 < len(blocos_brutos):
             bloco_seguinte = blocos_brutos[i+1]
-            if (bloco_atual["autor"] == meu_nome and padrao_ai.search(bloco_atual["texto_completo_bruto"]) and bloco_seguinte["autor"] == outro_nome):
-                descartes_ai_neste_arquivo += 1
-                i += 2
-                continue
+            
+            # Condição de descarte
+            if (bloco_atual["autor"] == meu_nome and 
+                padrao_ai.search(bloco_atual["texto_completo_bruto"]) and 
+                bloco_seguinte["autor"] == outro_nome):
+                
+                stats_global["total_sequencias_ai_descartadas"] += 1
+                # Pula o próximo bloco no iterador, efetivamente descartando ambos
+                next(iter_blocos, None) 
+                continue # Pula para a próxima iteração do for
+
+        # Se não caiu na condição de descarte, adiciona o bloco atual
         blocos_filtrados.append(bloco_atual)
-        i += 1
-    stats_global["total_sequencias_ai_descartadas"] += descartes_ai_neste_arquivo
+        
     return blocos_filtrados
 
 def limpar_texto_e_validar(texto_bruto):
     # 1. Quebra o bloco em mensagens individuais usando o separador
-    mensagens_individuais = texto_bruto.split("<|msg_sep|>")
+    mensagens_individuais = texto_bruto.split("\n")
     
     mensagens_limpas = []
     

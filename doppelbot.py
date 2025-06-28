@@ -87,7 +87,7 @@ while True:
                 input_ids,
                 max_new_tokens=150,
                 do_sample=True,
-                temperature=0.5,
+                temperature=0.3,
                 top_p=0.9,
                 top_k=50,
                 repetition_penalty=1.1,

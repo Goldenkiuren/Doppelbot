@@ -101,7 +101,7 @@ def limpar_texto_e_validar(texto_bruto):
     mensagens_limpas = []
     
     # Lista de palavras-chave que invalidam uma mensagem inteira
-    keywords_descarte = ["ligação de vídeo perdida", "mensagem apagada", "(arquivo anexado)"]
+    keywords_descarte = ["ligação de vídeo perdida", "mensagem apagada", "(arquivo anexado)", "ligação de voz perdida", "ligação de vídeo em grupo perdida"]
     
     # Lista de marcadores para remover, mantendo o resto do texto
     marcadores_remover = ["<Mídia oculta>", "<Mensagem editada>"]

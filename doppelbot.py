@@ -99,10 +99,6 @@ while True:
     # Decodifica apenas a parte nova da resposta
     resposta_ids = outputs[0][input_ids.shape[-1]:]
     resposta_bruta = tokenizer.decode(resposta_ids, skip_special_tokens=True).strip()
-
-    padroes_separador = r'<\|\s*(msg_sep|img_sep|msgSep|msge Sep|msg_separador_)\s*\|>'
-    resposta_sem_separador = re.sub(padroes_separador, '\n', resposta_bruta, flags=re.IGNORECASE).strip()
-    resposta_sem_null = re.sub(r'(\s*null\s*)+', ' ', resposta_sem_separador).strip()
-    resposta_formatada = re.sub(r'\n{2,}', '\n\n', resposta_sem_null)
+    resposta_formatada = re.sub(r'\n{2,}', '\n\n', resposta_bruta)
     
     print(f"Doppelbot:\n{resposta_formatada}\n")

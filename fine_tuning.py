@@ -44,15 +44,9 @@ tokenizer = AutoTokenizer.from_pretrained(MODELO_BASE, trust_remote_code=True)
 tokenizer.pad_token = tokenizer.eos_token
 tokenizer.padding_side = "right"
 
-# Adiciona o token especial para garantir que o modelo o entenda corretamente
-if "<|msg_sep|>" not in tokenizer.get_vocab():
-    print("Adicionando novo token especial: <|msg_sep|>")
-    tokenizer.add_special_tokens({'additional_special_tokens': ['<|msg_sep|>']})
-model.resize_token_embeddings(len(tokenizer))
-
 # --- 4. Configuração do LoRA OTIMIZADA ---
 peft_config = LoraConfig(
-    lora_alpha=128,  # <-- MUDANÇA 1: Ajustado para ser 2x o valor de 'r'.
+    lora_alpha=128,
     lora_dropout=0.1,
     r=64,
     bias="none",

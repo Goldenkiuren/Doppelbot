@@ -67,8 +67,7 @@ def agrupar_mensagens(mensagens_brutas):
             bloco_atual["textos"].append(msg_atual["texto_bruto"])
             bloco_atual["timestamp_final"] = msg_atual["timestamp"]
         else:
-            # --- MUDANÇA AQUI: Usa um separador especial em vez de '\n' ---
-            texto_completo = "<|msg_sep|>".join(bloco_atual["textos"])
+            texto_completo = "\n".join(bloco_atual["textos"])
             blocos.append({"autor": bloco_atual["autor"], "texto_completo_bruto": texto_completo, "timestamp": bloco_atual["timestamp_final"]})
             bloco_atual = {"autor": msg_atual["autor"], "textos": [msg_atual["texto_bruto"]], "timestamp_final": msg_atual["timestamp"]}
     
@@ -133,7 +132,7 @@ def limpar_texto_e_validar(texto_bruto):
             mensagens_limpas.append(msg_processada.strip())
 
     # 6. Junta as mensagens limpas de volta com o separador
-    return "<|msg_sep|>".join(mensagens_limpas)
+    return "\n".join(mensagens_limpas)
 
 
 def criar_e_validar_pares(blocos_filtrados, meu_nome):

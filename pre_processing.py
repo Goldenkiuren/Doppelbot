@@ -1,6 +1,7 @@
 import re
 import os
 import json
+import emoji
 from datetime import datetime, timedelta
 
 #CONSTANTES DE CONFIGURAÇÃO
@@ -123,7 +124,10 @@ def limpar_texto_e_validar(texto_bruto):
             
         # 5. Remove links
         msg_processada = re.sub(r'https?://\S+', '', msg_processada)
-        
+
+        # 6. Remove Emojis
+        msg_processada = emoji.replace_emoji(msg_processada, replace='')
+
         # Se após toda a limpeza a mensagem ainda tiver conteúdo, adicione-a
         if msg_processada.strip():
             mensagens_limpas.append(msg_processada.strip())

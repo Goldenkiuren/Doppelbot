@@ -43,9 +43,15 @@ model = AutoModelForCausalLM.from_pretrained(
     quantization_config=bnb_config,
     device_map="auto"
 )
+
+tokenizer = AutoTokenizer.from_pretrained(adapters_path)
+print("Ajustando vocabulário do modelo para corresponder aos adaptadores...")
+if "<|msg_sep|>" not in tokenizer.get_vocab():
+    tokenizer.add_special_tokens({'additional_special_tokens': ['<|msg_sep|>']})
+model.resize_token_embeddings(len(tokenizer))
+
 model = PeftModel.from_pretrained(model, adapters_path)
 model = model.eval()
-tokenizer = AutoTokenizer.from_pretrained(adapters_path)
 
 # --- Monta o prompt de sistema com base na categoria ---
 categoria = input("Com quem o Doppelbot está falando? (ex: amigo, interesse romântico...): ").strip()

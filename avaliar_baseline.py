@@ -5,13 +5,10 @@ import os
 import re
 
 # --- Constantes ---
-# Mesmo prefixo para garantir uma comparação justa
+# O prefixo do usuário é mantido para uma comparação justa de estímulos
 PREFIXO_PERGUNTA = (
     "Para a afirmação a seguir, descreva como ela se aplica a você. Responda sempre em primeira pessoa (eu).\n\nAfirmação: "
 )
-
-# Sistema de prompt neutro para a baseline
-SYSTEM_PROMPT_BASELINE = "You are a helpful and honest AI assistant. Respond to the user's request clearly and concisely."
 
 # --- Funções Auxiliares ---
 def carregar_perguntas(caminho_arquivo):
@@ -48,7 +45,6 @@ bnb_config = BitsAndBytesConfig(
     bnb_4bit_quant_type="nf4",
     bnb_4bit_compute_dtype=torch.bfloat16
 )
-# Carrega o modelo e o tokenizador diretamente do ID do modelo base
 model = AutoModelForCausalLM.from_pretrained(
     base_model_id,
     quantization_config=bnb_config,
@@ -56,7 +52,6 @@ model = AutoModelForCausalLM.from_pretrained(
 )
 tokenizer = AutoTokenizer.from_pretrained(base_model_id)
 
-# *** NENHUM ADAPTADOR PEFT/LORA É CARREGADO ***
 print("Modelo BASE carregado. Nenhum adaptador LoRA foi aplicado.")
 model = model.eval()
 
@@ -73,9 +68,8 @@ try:
             # Monta o prompt do usuário com o prefixo e a pergunta
             user_prompt_final = f"{PREFIXO_PERGUNTA}{pergunta_texto}"
 
-            # Prepara a conversa com o system prompt genérico
+            # Prepara a conversa SEM NENHUM system prompt
             conversa_atual = [
-                {"role": "system", "content": SYSTEM_PROMPT_BASELINE},
                 {"role": "user", "content": user_prompt_final}
             ]
 

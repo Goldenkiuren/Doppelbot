@@ -17,7 +17,6 @@ conversas_padronizadas/
 descricao.txt
 # Ignorar arquivos de saída do processamento (datasets e logs)
 # O asterisco (*) serve como um coringa para qualquer nome
-*.txt
 *.jsonl
 
 dataset_processado.txt

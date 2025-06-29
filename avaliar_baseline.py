@@ -7,7 +7,7 @@ import re
 # --- Constantes ---
 # O prefixo do usuário é mantido para uma comparação justa de estímulos
 PREFIXO_PERGUNTA = (
-    "Para a afirmação a seguir, descreva como ela se aplica a você. Responda sempre em primeira pessoa (eu).\n\nAfirmação: "
+    "Estou fazendo um teste para avaliar sua personalidade. Para a afirmação abaixo, responda estritamente em primeira pessoa (usando 'Eu'), explicando como ela se aplica ou não a você e ao seu jeito de ser.\n\nAfirmação: "
 )
 
 # --- Funções Auxiliares ---
